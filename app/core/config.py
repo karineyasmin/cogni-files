@@ -1,3 +1,4 @@
+import os
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
 
@@ -23,6 +24,7 @@ class Settings(BaseSettings):
     # AI Platforms & LLM Orchestration
     # Usamos ... no default para dizer ao Pydantic que ele REALMENTE é obrigatório no .env
     GEMINI_API_KEY: str = Field(default=..., validation_alias="GEMINI_API_KEY")
+    GEMINI_MODEL_NAME: str = "gemini-2.5-flash"
     LOCAL_LLM_URL: str = Field(
         default="http://localhost:11434", validation_alias="LOCAL_LLM_URL"
     )
@@ -36,6 +38,18 @@ class Settings(BaseSettings):
         env_file=".env", env_file_encoding="utf-8", extra="ignore"
     )
 
+    def get_prompt(self, filename: str) -> str:
+        """
+        Helper method to dynamically load prompt templates from the Markdown directory.
+        """
+        base_dir: str = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        file_path: str = os.path.join(base_dir, "prompts", filename)
 
-# Now the static analyzer knows parameters will be loaded automatically
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                return f.read()
+        except FileNotFoundError:
+            raise RuntimeError(f"Prompt file '{filename} not found at {file_path}")
+
+
 settings: Settings = Settings()
