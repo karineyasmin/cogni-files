@@ -30,14 +30,14 @@ class LLMProviderService:
         )
         try:
             base64_image: str = base64.b64encode(image_bytes).decode("utf-8")
-
+            prompt_template: str = settings.get_prompt("image_description.md")
             response: Any = self.gemini_client.models.generate_content(
                 model=settings.LOCAL_MODEL_NAME,
                 contents=[
                     types.Part.from_bytes(
                         data=base64.b64decode(base64_image), mime_type="image/png"
                     ),
-                    settings.IMAGE_DESCRIPTION_PROMPT,
+                    prompt_template,
                 ],
             )
             description: str = response.text or ""
