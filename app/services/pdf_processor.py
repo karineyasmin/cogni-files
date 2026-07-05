@@ -58,7 +58,7 @@ class PDFProcessorService:
             raise e
 
     @staticmethod
-    def chunck_text(
+    def chunk_text(
         text: str, chunk_size: int = 500, chunk_overlap: int = 50
     ) -> list[str]:
         """
