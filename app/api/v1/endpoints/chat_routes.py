@@ -14,14 +14,12 @@ llm_service: LLMProviderService = LLMProviderService()
 vector_service: VectorStorageService = VectorStorageService()
 
 
-router.post(
+@router.post(
     "/query",
     response_model=QueryResponse,
     status_code=status.HTTP_200_OK,
     summary="Ask a question about processed documents using context-driven RAG.",
 )
-
-
 async def query_knowledge_base(payload: QueryRequest) -> Any:
     """
     Queries the vector database for relevant document context and orchestrates
