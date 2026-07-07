@@ -1,6 +1,6 @@
 import os
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field
+from pydantic import Field, AliasChoices
 
 
 class Settings(BaseSettings):
@@ -15,7 +15,7 @@ class Settings(BaseSettings):
 
     MONGO_URI: str = Field(
         default="mongodb://admin:secret_password@localhost:27017",
-        validation_alias="MONGO_URI",
+        validation_alias=AliasChoices("MONGO_URI", "MONGO_DETAILS"),
     )
     MONGO_DB_NAME: str = "cognifiles_db"
 

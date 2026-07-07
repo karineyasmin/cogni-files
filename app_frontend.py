@@ -1,24 +1,21 @@
 from __future__ import annotations
-from typing import Any, Dict, List, Optional
+import os  # 🌟 Certifique-se de que o 'os' está importado aqui
+from typing import Any, Optional
 import streamlit as st
 import requests
 from requests import Response
 
-# Configuração da página do Streamlit
 st.set_page_config(page_title="Tutor Acadêmico Local", page_icon="📚", layout="wide")
 
-# Constantes de configuração e endpoints da API local
-BASE_URL: str = "http://localhost:8000/api/v1"
+BASE_URL = os.getenv("BASE_URL", "http://backend:8000/api/v1")
 UPLOAD_URL: str = f"{BASE_URL}/documents/upload"
 CHAT_URL: str = f"{BASE_URL}/chat/query"
-
-st.title("📚 Tutor Acadêmico RAG 100% Local")
-st.subheader("Estude seus documentos de forma privada e offline com Llama 3.2")
 
 # -----------------------------------------------------------------------------
 # SIDEBAR - Gerenciamento de Coleções e Upload
 # -----------------------------------------------------------------------------
 with st.sidebar:
+    # ... resto do seu código igual ...
     st.header("📁 Painel de Controle")
 
     collection_name: str = st.text_input(
@@ -41,21 +38,21 @@ with st.sidebar:
             ):
                 try:
                     # Preparação estrita dos payloads e mutipart/form-data
-                    files: Dict[str, tuple[str, bytes, str]] = {
+                    files: dict[str, tuple[str, bytes, str]] = {
                         "file": (
                             uploaded_file.name,
                             uploaded_file.getvalue(),
                             "application/pdf",
                         )
                     }
-                    data: Dict[str, str] = {"collection_name": collection_name}
+                    data: dict[str, str] = {"collection_name": collection_name}
 
                     response: Response = requests.post(
                         UPLOAD_URL, files=files, data=data
                     )
 
                     if response.status_code == 201:
-                        res_data: Dict[str, Any] = response.json()
+                        res_data: dict[str, Any] = response.json()
                         st.success(f"✓ '{uploaded_file.name}' indexado com sucesso!")
                         st.info(
                             f"Total de chunks criados: {res_data.get('total_chunks', 'N/A')}"
@@ -81,10 +78,10 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 
 # Força a tipagem estrita da lista de mensagens para o linter estático
-chat_history: List[Dict[str, str]] = st.session_state.messages
+chat_history: list[dict[str, str]] = st.session_state.messages  # type: ignore
 
 # Renderiza o histórico de mensagens armazenadas na tela
-message: Dict[str, str]
+message: dict[str, str]
 for message in chat_history:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
@@ -107,7 +104,7 @@ if prompt:
         with st.spinner("Ollama processando resposta com base na CPU local..."):
             try:
                 # Converte o histórico para o formato aceito pelo QueryRequest Schema do backend
-                formatted_history: List[Dict[str, str]] = [
+                formatted_history: list[dict[str, str]] = [
                     {
                         "role": "user" if m["role"] == "user" else "assistant",
                         "content": m["content"],
@@ -115,7 +112,7 @@ if prompt:
                     for m in chat_history[:-1]
                 ]
 
-                payload: Dict[str, Any] = {
+                payload: dict[str, Any] = {
                     "collection_name": collection_name,
                     "prompt": prompt,
                     "history": formatted_history,
@@ -125,7 +122,7 @@ if prompt:
                 response = requests.post(CHAT_URL, json=payload, timeout=180.0)
 
                 if response.status_code == 200:
-                    response_json: Dict[str, Any] = response.json()
+                    response_json: dict[str, Any] = response.json()
                     answer: str = str(response_json.get("answer", ""))
                     st.markdown(answer)
 
@@ -134,7 +131,7 @@ if prompt:
 
                     # Expansor técnico para depuração das fontes extraídas do ChromaDB
                     with st.expander("🔍 Ver contextos recuperados do ChromaDB"):
-                        retrieved_contexts: List[str] = response_json.get(
+                        retrieved_contexts: list[str] = response_json.get(
                             "retrieved_contexts", []
                         )
                         idx: int

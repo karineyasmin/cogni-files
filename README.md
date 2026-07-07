@@ -44,7 +44,7 @@ PROJECT_NAME="Cognifiles Local Tutor"
 
 # Internal Core Services Data Layout
 CHROMA_PERSIST_DIR=/app/.chromadb_storage
-MONGO_DETAILS=mongodb://admin:secret_password@mongodb:27017/?authSource=admin
+MONGO_URI=mongodb://admin:secret_password@mongodb:27017/?authSource=admin
 
 # Inference Specification
 LOCAL_LLM_URL=http://ollama:11434
