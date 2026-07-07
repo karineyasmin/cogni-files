@@ -10,14 +10,13 @@ dependencies = [
     "pydantic>=2.7.0",
     "pydantic-settings>=2.1.0",
     "motor>=3.3.2",
-    "pydantic-ai>=0.0.1",
-    "google-genai",
     "colorama>=0.4.6",
     "pypdf>=4.2.0",
     "httpx",
     "pillow>=12.2.0",
     "chromadb>=0.5.0",
-    "pymongo",
+    "streamlit>=1.59.0",
+    "requests",
 ]
 
 [build-system]
