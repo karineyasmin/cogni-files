@@ -1,15 +1,19 @@
 from __future__ import annotations
-from typing import Any, List, cast
+from typing import Any, cast
 from fastapi import APIRouter, HTTPException, status
 from app.schemas.chat_schema import QueryRequest, QueryResponse
 from app.services.llm_provider import LLMProviderService
 from app.services.vector_storage import VectorStorageService
 from app.core.logger import get_logger
+import re
+import unicodedata
+
 
 logger = get_logger(__name__)
 
 router: APIRouter = APIRouter()
 
+# Inicialização das dependências de execução puramente local
 llm_service: LLMProviderService = LLMProviderService()
 vector_service: VectorStorageService = VectorStorageService()
 
@@ -18,21 +22,33 @@ vector_service: VectorStorageService = VectorStorageService()
     "/query",
     response_model=QueryResponse,
     status_code=status.HTTP_200_OK,
-    summary="Ask a question about processed documents using context-driven RAG.",
+    summary="Ask a question about processed documents using 100% local context-driven RAG.",
 )
 async def query_knowledge_base(payload: QueryRequest) -> Any:
     """
-    Queries the vector database for relevant document context and orchestrates
-    the generation of an answer using Gemini with an automated local Ollama fallback.
+    Queries the local vector database for relevant document context and orchestrates
+    the generation of an answer using the local Ollama instance.
     """
-    logger.info(f"Received query request for collection: '{payload.collection_name}'")
+    logger.info(
+        f"Received local query request for collection: '{payload.collection_name}'"
+    )
+    normalized = (
+        unicodedata.normalize("NFKD", payload.collection_name)
+        .encode("ASCII", "ignore")
+        .decode("utf-8")
+    )
+    sanitized_collection = re.sub(r"[^a-zA-Z0-9._-]", "", normalized.replace(" ", "_"))
 
     try:
-        raw_contexts: Any = cast(Any, vector_service).get_relevant_chunks(
-            collection_name=payload.collection_name, query=payload.prompt, limit=4
+        # 1. Busca semântica de trechos relevantes no ChromaDB local usando o método real
+        raw_contexts: Any = cast(Any, vector_service).query_similar_chunks(
+            collection_name=sanitized_collection,
+            query_text=payload.prompt,
+            n_results=4,
         )
-        retrieved_chunks: list[str] = cast(List[str], raw_contexts)
+        retrieved_chunks: list[str] = cast(list[str], raw_contexts)
 
+        # 2. Tratamento de contingência para coleções sem dados mapeados
         if not retrieved_chunks:
             logger.warning(
                 f"No semantic context found in collection '{payload.collection_name}' for this query."
@@ -43,8 +59,10 @@ async def query_knowledge_base(payload: QueryRequest) -> Any:
                 retrieved_contexts=[],
             )
 
+        # 3. Consolidação dos fragmentos textuais extraídos
         context_block: str = "\n---\n".join(retrieved_chunks)
 
+        # 4. Construção da instrução de contexto do sistema acadêmico
         system_instruction: str = (
             "Você é um tutor acadêmico especialista. Use estritamente os trechos de documentos fornecidos "
             "no 'CONTEÚDO DE SUPORTE' para responder à dúvida do aluno de forma didática e detalhada.\n"
@@ -52,6 +70,7 @@ async def query_knowledge_base(payload: QueryRequest) -> Any:
             f"CONTEÚDO DE SUPORTE EXTRAÍDO DO BANCO VETORIAL:\n{context_block}"
         )
 
+        # 5. Formatação do histórico linear de mensagens do estudante
         history_context: str = ""
         if payload.history:
             history_context = "HISTÓRICO DA CONVERSA ATUAL:\n"
@@ -61,25 +80,15 @@ async def query_knowledge_base(payload: QueryRequest) -> Any:
 
         final_prompt: str = f"{history_context}DÚVIDA ATUAL DO ALUNO: {payload.prompt}"
 
-        provider_used: str = "gemini"
+        # 6. Geração de resposta direta via Ollama (Sem dependência de nuvem)
+        logger.info("Generating academic response via local Ollama engine...")
+        provider_used: str = "ollama-local"
 
-        try:
-            logger.info("Attempting response generation via Gemini Cloud...")
-            answer: str = await llm_service.generate_local_response(
-                prompt=final_prompt, system_instruction=system_instruction
-            )
+        answer: str = await llm_service.generate_local_response(
+            prompt=final_prompt, system_instruction=system_instruction
+        )
 
-        except Exception as cloud_err:
-            logger.warning(
-                f"Gemini cloud provider unavailable ({str(cloud_err)}). Initiating Ollama local fallback..."
-            )
-            provider_used = "ollama-fallback"
-
-            # Estratégia de Fallback: Geração local via Llama 3.2 na CPU
-            answer = await llm_service.generate_local_response(
-                prompt=final_prompt, system_instruction=system_instruction
-            )
-
+        # 7. Resposta formatada retornada com sucesso
         return QueryResponse(
             answer=answer,
             provider_used=provider_used,
@@ -87,7 +96,7 @@ async def query_knowledge_base(payload: QueryRequest) -> Any:
         )
 
     except Exception as e:
-        logger.error(f"Fatal error during RAG chat orchestration: {str(e)}")
+        logger.error(f"Fatal error during local RAG chat orchestration: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to process chat query: {str(e)}",

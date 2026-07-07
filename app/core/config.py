@@ -19,9 +19,6 @@ class Settings(BaseSettings):
     )
     MONGO_DB_NAME: str = "cognifiles_db"
 
-    # Usamos ... no default para dizer ao Pydantic que ele REALMENTE é obrigatório no .env
-    GEMINI_API_KEY: str = Field(default=..., validation_alias="GEMINI_API_KEY")
-    GEMINI_MODEL_NAME: str = "gemini-2.5-flash"
     LOCAL_LLM_URL: str = Field(
         default="http://localhost:11434", validation_alias="LOCAL_LLM_URL"
     )

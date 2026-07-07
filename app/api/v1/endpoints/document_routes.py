@@ -3,17 +3,18 @@ from typing import Any, cast
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, status
 from app.schemas.document_schema import DocumentCreate, DocumentResponse
 from app.services.pdf_processor import PDFProcessorService
-from app.services.llm_provider import LLMProviderService
 from app.services.vector_storage import VectorStorageService
 from app.repositories.document_repository import DocumentRepository
 from app.core.logger import get_logger
+import re
+import unicodedata
 
 logger = get_logger(__name__)
 
 router: APIRouter = APIRouter()
 
+# Inicialização das dependências de infraestrutura locais
 pdf_service: PDFProcessorService = PDFProcessorService()
-llm_service: LLMProviderService = LLMProviderService()
 vector_service: VectorStorageService = VectorStorageService()
 repository: DocumentRepository = DocumentRepository()
 
@@ -22,18 +23,31 @@ repository: DocumentRepository = DocumentRepository()
     "/upload",
     response_model=DocumentResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Upload and process a study document (PDF) with multimodal RAG analysis.",
+    summary="Upload and process a study document (PDF) using 100% local RAG infrastructure.",
 )
 async def upload_document(
     file: UploadFile = File(...), collection_name: str = Form(..., min_length=3)
 ) -> Any:
     """
     Ingests an uploaded PDF file, extracts its structural text content,
-    processes embedded imagery using Gemini's cloud vision intelligence,
     and indexes the unified knowledge base inside ChromaDB and MongoDB.
     """
     logger.info(
-        f"Received file upload request: '{file.filename}' for collection '{collection_name}'"
+        f"Received local file upload request: '{file.filename}' for collection '{collection_name}'"
+    )
+
+    # SANITIZAÇÃO COMPATÍVEL COM CHROMADB
+    # 1. Remove acentos (transforma 'Análise' em 'Analise'
+    normalized = (
+        unicodedata.normalize("NFKD", collection_name)
+        .encode("ASCII", "ignore")
+        .decode("utf-8")
+    )
+
+    sanitized_collection = re.sub(r"[^a-zA-Z0-9._-]", "", normalized.replace(" ", "_"))
+
+    logger.info(
+        f"Sanitized collection name from '{collection_name}' to '{sanitized_collection}'"
     )
 
     if not file.content_type or file.content_type != "application/pdf":
@@ -48,6 +62,7 @@ async def upload_document(
         file_size: int = len(file_bytes)
         filename: str = file.filename or "nameless_document.pdf"
 
+        # Extração e segmentação de páginas
         raw_pages: Any = pdf_service.extract_text_and_images(file_bytes)
         structured_pages: list[dict[str, Any]] = cast(list[dict[str, Any]], raw_pages)
 
@@ -59,39 +74,14 @@ async def upload_document(
                 chunks: Any = pdf_service.chunk_text(page_text)
                 compiled_chunks.extend(cast(list[str], chunks))
 
-            # Corrige o nome da variável não utilizada e tipa os elementos explicitamente
-            raw_images: Any = page_data.get("images", [])
-            images_list: list[bytes] = cast(list[bytes], raw_images)
-
-            for img_bytes in images_list:
-                try:
-                    image_description: str = (
-                        await llm_service.describe_image_with_gemini(img_bytes)
-                    )
-                    if image_description.strip():
-                        logger.info(
-                            f"Injecting AI image description chunk from page {page_data.get('page_index')}."
-                        )
-                        img_chunks: Any = pdf_service.chunk_text(image_description)
-                        compiled_chunks.extend(cast(list[str], img_chunks))
-                except Exception as img_err:
-                    logger.error(
-                        f"Non-fatal image transcription failure on page {page_data.get('page_index')}: {str(img_err)}"
-                    )
-                    continue
-
         if not compiled_chunks:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="The supplied document does not contain any indexable text content or readable figures.",
+                detail="The supplied document does not contain any indexable text content.",
             )
 
-        logger.info(f"Indexing {len(compiled_chunks)} total chunks into ChromaDB...")
-        # Chamada envelopada de forma segura para aceitar a execução dinâmica
-        cast(Any, vector_service).store_chunks(
-            collection_name=collection_name, chunks=compiled_chunks
-        )
-
+        # PASSO 1: Criação do metadado estruturado no MongoDB
+        # 1. Cria o registro diretamente no MongoDB (Retorna estritamente um dict)
         document_payload: DocumentCreate = DocumentCreate(
             filename=filename,
             content_type=file.content_type,
@@ -101,6 +91,19 @@ async def upload_document(
 
         created_record: dict[str, Any] = await repository.create(
             document_in=document_payload, total_chunks=len(compiled_chunks)
+        )
+
+        # 2. Extração direta do ID do dicionário (Sem ifs ou isinstance)
+        id_do_documento: str = str(created_record["_id"])
+
+        # 3. Indexação vetorial no ChromaDB local usando a nova variável
+        logger.info(
+            f"Indexing {len(compiled_chunks)} total chunks into local ChromaDB..."
+        )
+        cast(Any, vector_service).add_chunks(
+            collection_name=sanitized_collection,
+            chunks=compiled_chunks,
+            document_id=id_do_documento,
         )
 
         return created_record

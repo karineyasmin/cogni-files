@@ -1,52 +1,22 @@
-import base64
+from __future__ import annotations
 import httpx
 from typing import Any
-from google import genai  # type: ignore
-from google.genai import types  # type: ignore
-from app.core import settings
-from app.core import get_logger
+from app.core.config import settings
+from app.core.logger import get_logger
 
 logger = get_logger(__name__)
 
 
 class LLMProviderService:
     """
-    Orchestrates LLM generation requests, routing between Google Gemini (cloud
-    multimodal) and Ollama Llama 3.2 (local CPU)
+    Orchestrates LLM generation requests, routing exclusively to
+    the local Ollama instance for offline privacy and zero-cost inference.
     """
 
     def __init__(self) -> None:
-        self.gemini_client: Any = genai.Client(api_key=settings.GEMINI_API_KEY)  # type: ignore
-        self.http_client: Any = httpx.AsyncClient(
-            base_url=settings.LOCAL_LLM_URL, timeout=60.0
+        self.http_client: httpx.AsyncClient = httpx.AsyncClient(
+            base_url=settings.LOCAL_LLM_URL, timeout=180.0
         )
-
-    async def describe_image_with_gemini(self, image_bytes: bytes) -> str:
-        """
-        Sends extracted document image bytes to Gemini to convert visual data into detailed text context.
-        """
-        logger.info(
-            "Sending iamge bytes to Gemini to convert visual data into detailed text context.|"
-        )
-        try:
-            base64_image: str = base64.b64encode(image_bytes).decode("utf-8")
-            prompt_template: str = settings.get_prompt("image_description.md")
-            response: Any = self.gemini_client.models.generate_content(
-                model=settings.LOCAL_MODEL_NAME,
-                contents=[
-                    types.Part.from_bytes(
-                        data=base64.b64decode(base64_image), mime_type="image/png"
-                    ),
-                    prompt_template,
-                ],
-            )
-            description: str = response.text or ""
-            logger.info("Image description successfully generated.")
-            return description
-
-        except Exception as e:
-            logger.error(f"Cloud image description failed: {str(e)}")
-            raise e
 
     async def generate_local_response(
         self, prompt: str, system_instruction: str = ""
@@ -67,9 +37,9 @@ class LLMProviderService:
             response: httpx.Response = await self.http_client.post(
                 "/v1/chat/completions", json=payload
             )
-            respose.raise_for_status()  # type: ignore
+            response.raise_for_status()
             response_data: dict[str, Any] = response.json()
-            answer: str = response_data["choices"][0]["message"]["content"]
+            answer: str = str(response_data["choices"][0]["message"]["content"])
 
             logger.info("Local response generated successfully.")
             return answer
